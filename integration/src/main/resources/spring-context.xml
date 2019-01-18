@@ -1,0 +1,186 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:int="http://www.springframework.org/schema/integration"
+       xmlns:int-http="http://www.springframework.org/schema/integration/http"
+       xsi:schemaLocation="
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+        http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration-5.1.xsd
+        http://www.springframework.org/schema/integration/http
+        http://www.springframework.org/schema/integration/http/spring-integration-http-3.0.xsd">
+    <context:component-scan
+            base-package="distributed.system"/>
+
+    <int:channel id="busListChannel"/>
+    <int:channel id="carListChannel"/>
+
+    <int:channel id="busListRequestChannel"/>
+
+    <int:channel id="busListResponseJsonChannel"/>
+    <int:channel id="busListResponseTypedChannel"/>
+
+    <int:channel id="busRentalAddRequestChannel"/>
+    <int:channel id="busRentalAddResponseChannel"/>
+
+    <int:channel id="busRentalAddResponseChannelSuccess"/>
+    <int:channel id="busRentalAddResponseJsonChannelError"/>
+    <int:channel id="busRentalAddResponseTypedChannelError"/>
+
+    <int:channel id="carListRequestChannel"/>
+
+    <int:channel id="carListResponseJsonChannel"/>
+    <int:channel id="carListResponseTypedChannel"/>
+
+    <int:channel id="carRentalAddRequestChannel"/>
+    <int:channel id="carRentalAddResponseChannel"/>
+
+    <int:channel id="carRentalAddResponseChannelSuccess"/>
+    <int:channel id="carRentalAddResponseJsonChannelError"/>
+    <int:channel id="carRentalAddResponseTypedChannelError"/>
+
+    <int:router input-channel="vehicleListChannel" expression="payload">
+        <int:mapping value="BUS" channel="busListChannel"/>
+        <int:mapping value="CAR" channel="carListChannel"/>
+    </int:router>
+
+    <int:gateway id="rentalService"
+                 service-interface="distributed.system.RentalGateway"
+    />
+
+    <int:service-activator
+            input-channel="busListChannel"
+            output-channel="busListRequestChannel"
+            ref="rentalApplicationServiceActivator" method="listFreeVehicles"/>
+
+    <int-http:outbound-gateway
+            url="http://localhost:8080/companies/all/buses/free/list?from={from}&amp;to={to}"
+            request-channel="busListRequestChannel"
+            reply-channel="busListResponseJsonChannel"
+            expected-response-type="java.lang.String" http-method="GET"
+            charset="UTF-8">
+        <int-http:uri-variable name="from"
+                               expression="headers['from']"/>
+        <int-http:uri-variable name="to"
+                               expression="headers['to']"/>
+
+    </int-http:outbound-gateway>
+
+
+    <int:json-to-object-transformer
+            input-channel="busListResponseJsonChannel"
+            output-channel="busListResponseTypedChannel"
+            type="dto.RentalCompany[]"
+    />
+
+
+    <int:service-activator
+            input-channel="busListResponseTypedChannel"
+            output-channel="busRentalAddRequestChannel"
+            ref="rentalApplicationServiceActivator" method="selectFreeBuses"/>
+
+    <int-http:outbound-gateway
+            url="http://localhost:8080/companies/{companyId}/rentals/add"
+            request-channel="busRentalAddRequestChannel"
+            reply-channel="busRentalAddResponseChannel"
+            expected-response-type="java.lang.String" http-method="POST"
+            charset="UTF-8">
+        <int-http:uri-variable name="companyId"
+                               expression="headers['companyId']"/>
+    </int-http:outbound-gateway>
+
+
+    <int:payload-type-router
+            input-channel="busRentalAddResponseChannel">
+        <int:mapping
+                type="org.springframework.http.ResponseEntity"
+                channel="busRentalAddResponseChannelSuccess"/>
+        <int:mapping type="java.lang.String"
+                     channel="busRentalAddResponseJsonChannelError"/>
+    </int:payload-type-router>
+
+
+    <int:json-to-object-transformer
+            input-channel="busRentalAddResponseJsonChannelError"
+            output-channel="busRentalAddResponseTypedChannelError"
+            type="dto.error.ErrorMessage"/>
+
+    <int:service-activator
+            input-channel="busRentalAddResponseChannelSuccess"
+            ref="rentalApplicationServiceActivator" method="successfullyBusesRental"/>
+
+    <int:service-activator
+            input-channel="busRentalAddResponseTypedChannelError"
+            ref="rentalApplicationServiceActivator" method="errorBusRental"/>
+
+
+
+
+    <int:service-activator
+            input-channel="carListChannel"
+            output-channel="carListRequestChannel"
+            ref="rentalApplicationServiceActivator" method="listFreeVehicles"/>
+
+    <int-http:outbound-gateway
+            url="http://localhost:8080/companies/all/cars/free/list?from={from}&amp;to={to}"
+            request-channel="carListRequestChannel"
+            reply-channel="carListResponseJsonChannel"
+            expected-response-type="java.lang.String" http-method="GET"
+            charset="UTF-8">
+        <int-http:uri-variable name="from"
+                               expression="headers['from']"/>
+        <int-http:uri-variable name="to"
+                               expression="headers['to']"/>
+
+    </int-http:outbound-gateway>
+
+
+    <int:json-to-object-transformer
+            input-channel="carListResponseJsonChannel"
+            output-channel="carListResponseTypedChannel"
+            type="dto.RentalCompany[]"
+    />
+
+
+    <int:service-activator
+            input-channel="carListResponseTypedChannel"
+            output-channel="carRentalAddRequestChannel"
+            ref="rentalApplicationServiceActivator" method="selectFreeCars"/>
+
+    <int-http:outbound-gateway
+            url="http://localhost:8080/companies/{companyId}/rentals/add"
+            request-channel="carRentalAddRequestChannel"
+            reply-channel="carRentalAddResponseChannel"
+            expected-response-type="java.lang.String" http-method="POST"
+            charset="UTF-8">
+        <int-http:uri-variable name="companyId"
+                               expression="headers['companyId']"/>
+    </int-http:outbound-gateway>
+
+
+    <int:payload-type-router
+            input-channel="carRentalAddResponseChannel">
+        <int:mapping
+                type="org.springframework.http.ResponseEntity"
+                channel="carRentalAddResponseChannelSuccess"/>
+        <int:mapping type="java.lang.String"
+                     channel="carRentalAddResponseJsonChannelError"/>
+    </int:payload-type-router>
+
+
+    <int:json-to-object-transformer
+            input-channel="carRentalAddResponseJsonChannelError"
+            output-channel="carRentalAddResponseTypedChannelError"
+            type="dto.error.ErrorMessage"/>
+
+    <int:service-activator
+            input-channel="carRentalAddResponseChannelSuccess"
+            ref="rentalApplicationServiceActivator" method="successfullyCarsRental"/>
+
+    <int:service-activator
+            input-channel="carRentalAddResponseTypedChannelError"
+            ref="rentalApplicationServiceActivator" method="errorCarRental"/>
+
+
+
+</beans>
